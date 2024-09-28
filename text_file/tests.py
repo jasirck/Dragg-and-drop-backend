@@ -1,41 +1,57 @@
-from django.test import TestCase
+from django.urls import reverse
+from rest_framework.test import APITestCase
 from rest_framework import status
-from rest_framework.test import APIClient
 from .models import UrlsFiles
 
-class UrlsFilesAPITests(TestCase):
+class FileUploadTestCase(APITestCase):
+    
     def setUp(self):
-        self.client = APIClient()
-        self.upload_url = '/upload/'  # Adjust this URL to match your actual endpoint
-        self.urls_get_url = '/urls/'   # Adjust this URL to match your actual endpoint
+        # Creating a sample text file for testing
+        self.test_file_content = "https://example.com\nhttps://another-example.com\nhttps://github.com"
+        self.test_file = {
+            'file': ('urls.txt', self.test_file_content, 'text/plain')
+        }
+        self.upload_url = reverse('file-upload')
+        self.urls_get_url = reverse('file-upload')
 
-    def test_upload_file_and_extract_urls(self):
-        # Create a sample text file with URLs
-        test_file_content = "Here are some URLs: https://example.com and http://another-example.com"
-        test_file = self.create_text_file(test_file_content)
-
-        # Upload the file
-        response = self.client.post(self.upload_url, {'file': test_file}, format='multipart')
+    def test_upload_file(self):
+        """Test that the file can be uploaded and URLs extracted."""
+        # Post the file
+        response = self.client.post(self.upload_url, self.test_file, format='multipart')
+        
+        # Assert that the response status code is 201 (Created)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-
-        # Check if URLs are saved in the database
-        urls = UrlsFiles.objects.all()
-        self.assertEqual(urls.count(), 2)  # There are 2 URLs in the test file
+        
+        # Assert that 3 URLs were saved
+        self.assertEqual(UrlsFiles.objects.count(), 3)
+        
+        # Assert that the URLs match what we uploaded
+        expected_urls = ["https://example.com", "https://another-example.com", "https://github.com"]
+        saved_urls = UrlsFiles.objects.values_list('urls', flat=True)
+        self.assertListEqual(list(saved_urls), expected_urls)
 
     def test_get_urls(self):
-        # Set up data by uploading a file first
-        self.test_upload_file_and_extract_urls()
-
-        # Get the URLs
+        """Test retrieving URLs after uploading."""
+        # First, upload the file to populate the database
+        self.client.post(self.upload_url, self.test_file, format='multipart')
+        
+        # Now test the GET request to retrieve URLs
         response = self.client.get(self.urls_get_url)
+        
+        # Assert that the response is 200 OK
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         
-        # Validate the response data
-        urls = response.json()
-        self.assertEqual(len(urls), 2)  # Should match the number of URLs uploaded
+        # Assert that the returned data matches the saved URLs
+        expected_data = [
+            {"urls": "https://example.com"},
+            {"urls": "https://another-example.com"},
+            {"urls": "https://github.com"}
+        ]
+        self.assertEqual(response.json(), expected_data)
 
-    def create_text_file(self, content):
-        """Helper method to create a text file in memory"""
-        from io import BytesIO
-        return BytesIO(content.encode('utf-8'))
-
+    def test_upload_empty_file(self):
+        """Test that an error is raised if no file is uploaded."""
+        response = self.client.post(self.upload_url, {}, format='multipart')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('error', response.json())
+        self.assertEqual(response.json()['error'], 'No file provided')

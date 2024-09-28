@@ -4,4 +4,4 @@ from .models import UrlsFiles
 class UrlsFilesSerializer(serializers.ModelSerializer):
     class Meta:
         model = UrlsFiles
-        fields = '__all__'
+        fields = ['urls','content']
